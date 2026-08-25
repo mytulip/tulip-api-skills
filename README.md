@@ -29,7 +29,7 @@ This will:
 1. Copy all documentation files from `apps/docs/content/docs/`
 2. Copy the OpenAPI specification from `apps/docs/content/openapi.json`
 3. Generate the `llms.txt` index
-4. Output the complete skill to `/Users/thibaudcanaud/__WORKSPACE__/__TULIP__/__DEV__/tulip-api-skills`
+4. Output the complete skill to `$TULIP_SKILL_OUTPUT_DIR` (defaults to `/Users/thibaudcanaud/__WORKSPACE__/__TULIP__/__DEV__/tulip-api-skills`)
 
 ### Publishing to Skills.sh
 
@@ -53,7 +53,7 @@ apps/docs/skills/tulip-api-expert/
     └── build.sh         # Build script
 ```
 
-**Output** (build target):
+**Output** (build target — `$TULIP_SKILL_OUTPUT_DIR`, defaults to):
 ```
 /Users/thibaudcanaud/__WORKSPACE__/__TULIP__/__DEV__/tulip-api-skills/
 ├── SKILL.md

@@ -9,17 +9,9 @@ Votre clé de développement utilise la **même URL** que la clé de production 
 
 ## Contrats de test
 
-Pour valider votre intégration sans créer de vrais contrats, utilisez le paramètre `test: true` :
+Le mode test est un **paramétrage de compte** configuré par Tulip. Lorsqu'il est activé sur votre compte, tous les contrats créés sont automatiquement marqués comme contrats de test — aucun paramètre supplémentaire n'est nécessaire dans vos requêtes.
 
-```json
-POST /v2/contracts
-{
-  "test": true,
-  "uid": "test_user",
-  "contract_type": "LCD",
-  ...
-}
-```
+Contactez Tulip pour activer ou désactiver le mode test sur votre compte.
 
 Les contrats de test sont filtrables via `?test=true` dans les listes.
 

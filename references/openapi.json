@@ -3267,7 +3267,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/AddRenterRequest"
               }
             }
           }
@@ -3387,6 +3387,17 @@
           },
           "product": {
             "$ref": "#/components/schemas/Product"
+          }
+        }
+      },
+      "AddRenterRequest": {
+        "type": "object",
+        "required": [
+          "renter_id"
+        ],
+        "properties": {
+          "renter_id": {
+            "type": "string"
           }
         }
       },
