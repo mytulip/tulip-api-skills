@@ -341,16 +341,17 @@ Ces erreurs sont dans le contexte de l'API Claims (différent des codes contrats
 | 2003 | `Product not found in contract` | Le produit n'existe pas dans le contrat. |
 | 2004 | `Document not found` | Le document n'existe pas. |
 
-### Sinistres — Logique métier (3001–3007)
+### Sinistres — Logique métier (3001–3008)
 
 | Code | Message API | Description |
 |------|------------|-------------|
 | 3001 | `Claim can only be modified in draft status` | Le sinistre ne peut être modifié qu'en statut `draft`. |
 | 3002 | `Claim has already been submitted or cancelled` | Le sinistre a déjà été soumis ou annulé. |
-| 3003 | `Claim is already abandoned` | Le sinistre est déjà abandonné/archivé. |
+| 3003 | `Claim is already abandoned`, `The claim cannot be abandoned because it is not open.`, `Cannot upload documents to a closed claim` (le message cite le statut : `closed`, `rejected` ou `cancelled`) | Le sinistre n'est plus ouvert. Abandon (`DELETE /v2/claims/{id}`) : le sinistre est déjà abandonné ou archivé, ou il est clos ou refusé. Dépôt de document (`PUT /v2/claims/{id}/documents`) : le sinistre est clos, refusé ou abandonné, plus aucun document ne s'y dépose. |
 | 3004 | `Missing required documents: ...` | Des documents obligatoires manquent pour soumettre. |
 | 3005 | `This document has already been validated and cannot be replaced` | Le document a été accepté et ne peut plus être remplacé. |
-| 3007 | `Cannot abandon claim: payment in progress` | Un paiement est en cours, impossible d'abandonner. |
+| 3007 | `Cannot abandon claim: payment in progress` | Un paiement est en cours, impossible d'abandonner. `settlements` ne liste que les paiements effectués : un paiement en cours bloque l'abandon sans y apparaître. |
+| 3008 | `This document must be signed by the insured in the Colibri customer area and cannot be replaced through the API` | Le document du même type est à signer (`to_sign`) : l'assuré le signe depuis son espace client Colibri. Aucune route de l'API ne permet de le signer. |
 
 ### Sinistres — Authentification (9001–9003)
 

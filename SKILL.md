@@ -122,7 +122,8 @@ When helping with claims, ALWAYS consider:
    ```
    - Modifications only allowed in `draft` status
    - `draft` → `archived`: Cancel before submission
-   - `in_progress` → `abandoned`: Cancel after submission (checks for active payments)
+   - `DELETE /v2/claims/{id}`: on a `draft`, cancels the pre-declaration (`archived`, webhook `v2.claim.draft.archived`); on a submitted pre-declaration or a claim outside pre-declaration ("sinistre hors pré-déclaration", `id` = `claimId`), abandons the claim Tulip handles, whatever its stage while open (`abandoned`, webhook `v2.claim.abandoned`), with no way back through the API. Refused while a payment is in progress (409, 3007) or once the claim is no longer open (409, 3003). `settlements` only lists completed payments: a payment in progress blocks the abandonment without appearing there
+   - In the list `GET /v2/claims`, status is only `draft`, `submitted` or `archived`. `submitted` means "filed for review" ("dossier déposé pour analyse"), not "being processed": it includes closed, rejected and abandoned claims. Every claim outside pre-declaration is `submitted` in the list. The claim's status is read in the detail `GET /v2/claims/{id}`
 
 3. **Auto-Submission**:
    - Requires `?autoSubmit=true` query parameter on document upload
@@ -152,8 +153,9 @@ When debugging errors, provide context:
 
 2. **Common Errors with Context**:
    - Error 1009 → ownerId invalid (user doesn't exist or not validated)
-   - Error 3003 → Claim status locked (already submitted/archived)
-   - Error 3007 → Active payment blocking (cannot abandon claim with pending payment)
+   - Error 3003 → Claim status locked (already submitted/archived; no document upload on a closed, rejected or abandoned claim)
+   - Error 3007 → Active payment blocking (cannot abandon claim with pending payment; `settlements` only lists completed payments, so the blocking payment does not appear there)
+   - Error 3008 → Document to sign (to_sign): the insured signs it in the Colibri customer area, the API never replaces it
    - Error 1330-1343 → Contract modification window violations (4-hour window passed)
 
 ## How to Help Developers

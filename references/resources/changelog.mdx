@@ -3,6 +3,51 @@ title: Changelog
 description: Historique des changements de l'API Tulip.
 ---
 
-## v2 (version actuelle)
+Les changements de l'API v2 qui touchent votre intégration, du plus récent au plus ancien. Chaque entrée dit ce qui change et ce que vous devez faire.
 
-Aucun changement récent à signaler. Cette page sera mise à jour lors des prochaines évolutions de l'API.
+## 2 novembre 2026 : sinistres hors pré-déclaration dans l'API v2
+
+Les sinistres ouverts chez Tulip sans passer par une pré-déclaration de l'API, appelés **sinistres hors pré-déclaration**, sont désormais disponibles dans l'API v2, avec les mêmes routes que les pré-déclarations. Le contrat change sur trois points seulement : le statut d'un document refusé devient `refused` dans l'énumération `ClaimDocumentStatus`, `to_sign` y devient une valeur publiée, et un nouveau code d'erreur apparaît pour les documents à signer. Aucun champ ni paramètre n'est ajouté ou retiré. Le dépôt de documents change aussi de comportement : il répond en priorité à une pièce demandée, ne renvoie plus `3005` quand un document du type reste remplaçable, rattache au sinistre un document déposé sur une pré-déclaration soumise, et peut déclencher `v2.claim.status.updated`.
+
+### Ce qui change
+
+- **Liste** : `GET /v2/claims` renvoie aussi les sinistres hors pré-déclaration du `userId`, avec ses pré-déclarations, du plus récent au plus ancien. Le statut de la liste reste `draft`, `submitted` ou `archived`. `submitted` signifie « dossier déposé pour analyse », pas « en cours de traitement » : il comprend aussi des dossiers clos, refusés ou abandonnés. Un sinistre hors pré-déclaration est toujours `submitted` dans la liste, et le filtre `status=submitted` le renvoie toujours.
+- **Lecture d'un sinistre** : `GET /v2/claims/{id}` lit un sinistre hors pré-déclaration. Le statut à jour du dossier (`in_progress`, `pending_info`, `closed`, `rejected`, `abandoned`) se lit **dans `GET /v2/claims/{id}`**, pour une pré-déclaration soumise comme pour un sinistre hors pré-déclaration.
+- **Statut d'une pré-déclaration soumise** (voir [Webhooks : statut](/docs/concepts/webhooks#statut) et [Statuts d'un document](/docs/concepts/documents-management#statuts-dun-document)) :
+  - `GET /v2/claims/{id}` renvoie `pending_info` tant qu'une pièce `mandatory` manque ou qu'une pièce réclamée par Tulip, `expected` comprise, est `waiting_for` dans `documentEntries`. À la soumission par l'API, Tulip réclame les pièces que vous n'avez pas déposées.
+  - Il renvoie `in_progress` quand c'est à Tulip d'agir, puis `closed`, `rejected` ou `abandoned`.
+  - Une pré-déclaration soumise jusqu'ici renvoyée `in_progress` ou `submitted` peut donc être renvoyée `pending_info`. Dans la liste (`GET /v2/claims`), elle reste toujours `submitted`.
+- **Pièces du dossier** : pour un sinistre hors pré-déclaration, `documentEntries` contient les documents réels du sinistre. Une pièce demandée par le gestionnaire Tulip est `mandatory`, et `isRequiredDocument` vaut `true` au dépôt. Pour une pré-déclaration soumise, les pièces demandées ensuite par le gestionnaire Tulip, hors des pièces prévues à la création, sont désormais `mandatory`, et non plus `optional`.
+- **Dépôt de documents** : `PUT /v2/claims/{id}/documents` fonctionne sur un sinistre hors pré-déclaration comme sur une pré-déclaration soumise. Il répond `409` sur un sinistre clos, refusé ou abandonné. Sur une pré-déclaration soumise, le document déposé est désormais rattaché au sinistre : il se lit par l'`id` de la pré-déclaration comme par celui du sinistre, et il est transmis au gestionnaire Tulip.
+- **Dépôt sur une pièce demandée** : quand un document du type demandé par le gestionnaire Tulip existe à côté d'un document déposé sans demande, un dépôt du même type répond désormais à la demande : le fichier est enregistré sous l'`id` de la demande, avec `isRequiredDocument` à `true`. Avant, il pouvait remplacer le document déposé sans demande (`isRequiredDocument` à `false`).
+- **Dépôt à côté d'un document `accepted`** : un dépôt du même type qu'un document `accepted` réussit s'il existe un document du type `waiting_for` ou `to_verify`, qui est remplacé. Il ne répond `409`, code `3005`, que s'il n'y a aucun document remplaçable.
+- **Document à signer** : un document peut avoir le statut `to_sign` quand le gestionnaire Tulip demande une signature. L'assuré le signe depuis son espace client Colibri. Il ne se remplace pas par l'API : un dépôt du même type répond `409`, code `3008` (`DOCUMENT_TO_SIGN`). Aucune route de l'API ne permet de signer.
+- **Document refusé** : un document refusé a le statut `refused`, dans les réponses de l'API comme dans les webhooks. L'énumération `ClaimDocumentStatus` est corrigée en ce sens : elle publiait `rejected`, une valeur que l'API n'a jamais renvoyée.
+- **Statut `to_sign` publié** : `to_sign` devient une valeur de l'énumération `ClaimDocumentStatus`, à côté de `waiting_for`, `to_verify`, `accepted` et `refused`. L'API servait déjà ce statut sans que l'énumération le publie : un client généré depuis l'OpenAPI pouvait échouer à lire un sinistre qui en contenait.
+- **Abandon** : `DELETE /v2/claims/{id}` sur un brouillon annule la pré-déclaration (`archived`). Sur une pré-déclaration soumise ou un sinistre hors pré-déclaration, il **abandonne le sinistre que Tulip instruit**, sans retour possible par l'API. L'abandon est refusé si un paiement est en cours (`409`, code `3007`) ou si le sinistre n'est plus ouvert (`409`, code `3003`). `settlements` ne liste que les paiements effectués : un paiement en cours bloque l'abandon sans y apparaître.
+- **Modification et soumission** : `PATCH /v2/claims/{id}` et `POST /v2/claims/{id}/submit` renvoient `409` sur un sinistre hors pré-déclaration (codes `3001` et `3002`), comme sur une pré-déclaration soumise.
+- **Webhook `v2.claim.document.uploaded`** : `claim.externalClaimId`, l'`id` de la pré-déclaration, est absent pour un sinistre hors pré-déclaration.
+- **Webhooks de statut d'une pré-déclaration soumise** (voir [Webhooks : statut](/docs/concepts/webhooks#statut)) :
+  - À la soumission, `v2.claim.created` porte un `claim.status` qui peut différer de celui de `GET /v2/claims/{id}`, et `pending_info` quand Tulip réclame des pièces dès la soumission.
+  - Ensuite, `v2.claim.status.updated` annonce chaque changement du statut renvoyé par `GET /v2/claims/{id}`, passages entre `pending_info` et `in_progress` compris, y compris après un dépôt de document.
+  - `to` et `claim.status` y portent le nouveau statut, `from` le dernier statut annoncé ou, pour la première annonce, un statut antérieur (`in_progress` ou `submitted`).
+  - Dans `v2.claim.created` et `v2.claim.status.updated`, `claim.id` est l'identifiant du sinistre (le `claimId` reçu à la soumission), pas l'`id` de la pré-déclaration, et `claim.externalClaimId` est absent : rapprochez ces événements par `claimId`.
+
+### Ce que vous devez faire
+
+- Prévoyez dans la liste des sinistres que vous n'avez pas créés. Vous les reconnaissez à leur `id`, égal à leur `claimId`, et à `canSubmit` à `false`. Les champs propres aux pré-déclarations y valent parfois `null`.
+- Pour savoir où en est un dossier, lisez `GET /v2/claims/{id}` : le statut `submitted` de la liste ne dit pas s'il est terminé.
+- Quand une pré-déclaration est `pending_info`, déposez un document pour chaque pièce au statut `waiting_for` de `documentEntries` : pièces `mandatory` manquantes et pièces réclamées par Tulip, y compris les pièces `expected`.
+- Pour suivre le statut d'une pré-déclaration soumise :
+  - lisez `GET /v2/claims/{id}` après `v2.claim.created`, puis fiez-vous à `v2.claim.status.updated` ou à `GET /v2/claims/{id}` ;
+  - ne vous servez pas du `claim.status` de `v2.claim.created`, `v2.claim.document.accepted`, `v2.claim.document.refused`, `v2.claim.document.requested` et `v2.claim.settlement.*` : il peut différer de celui de `GET /v2/claims/{id}` ;
+  - n'attendez pas d'ordre entre `v2.claim.document.uploaded` et `v2.claim.status.updated`.
+- Pour un document `to_sign`, invitez l'assuré à signer dans son espace client Colibri. Ne le redéposez pas par l'API.
+- Pour un document refusé, attendez `refused`, dans l'API comme dans les webhooks.
+- Si votre client est généré depuis l'OpenAPI, régénérez-le : `ClaimDocumentStatus` contient désormais `to_sign` et `refused`.
+- Si vous retrouvez le sinistre d'un `v2.claim.document.uploaded` par `claim.externalClaimId`, utilisez `claim.id` quand ce champ est absent : c'est l'`id` à passer à l'API v2.
+- Acceptez `v2.claim.status.updated` après un dépôt de document.
+- Avant d'abandonner un sinistre hors pré-déclaration, assurez-vous que l'assuré ne veut plus qu'il soit traité.
+- Acceptez le statut `unknown` sur des documents historiques : des documents déposés entre 2020 et 2022, sur des sinistres clos, n'ont pas de statut enregistré et sont servis avec `unknown`, une valeur hors de l'énumération `ClaimDocumentStatus`. Ne la rejetez pas.
+
+Pour en savoir plus, voir [Sinistres hors pré-déclaration](/docs/concepts/claims-workflow#sinistres-hors-pré-déclaration), [Statuts d'un document](/docs/concepts/documents-management#statuts-dun-document), [Règle de doublon](/docs/concepts/documents-management#règle-de-doublon) et [Webhooks : documents](/docs/concepts/webhooks#documents).

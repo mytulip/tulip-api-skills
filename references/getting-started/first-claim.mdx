@@ -1,9 +1,9 @@
 ---
 title: Déclarer votre premier sinistre
-description: Tutoriel pas à pas pour créer un sinistre, uploader des documents et soumettre la déclaration.
+description: Tutoriel pas à pas pour créer un sinistre, déposer des documents et soumettre la déclaration.
 ---
 
-Ce tutoriel vous guide à travers le flux complet d'un sinistre : création, upload de documents, soumission et annulation.
+Ce tutoriel vous guide à travers le flux complet d'un sinistre : création, dépôt de documents, soumission et annulation.
 
 ## Prérequis
 
@@ -84,9 +84,9 @@ curl -X POST https://api.mytulip.io/v2/claims \
 **Double identifiant** — `id` est l'identifiant de la pré-déclaration, disponible immédiatement. `claimId` sera attribué après soumission. Les deux sont acceptés par tous les endpoints GET.
 </Callout>
 
-Notez le `id` et vérifiez les `documentEntries` pour savoir quels documents télécharger.
+Notez le `id` et vérifiez les `documentEntries` pour savoir quels documents déposer.
 
-## Étape 2 : Uploader les documents
+## Étape 2 : Déposer les documents
 
 L'endpoint `PUT /v2/claims/{id}/documents` accepte **un seul document par requête**. Deux méthodes sont disponibles : JSON avec base64 ou multipart/form-data.
 
@@ -137,7 +137,7 @@ curl -X PUT "https://api.mytulip.io/v2/claims/claim_xyz789/documents?autoSubmit=
 | Champ | Type | Requis | Description |
 |-------|------|--------|-------------|
 | `meta` | JSON string | oui | Objet JSON stringifié contenant `type`, `title`, et optionnellement `comment` |
-| `file` | binary | oui | Le fichier binaire à uploader |
+| `file` | binary | oui | Le fichier binaire à déposer |
 
 ### Réponse
 
@@ -166,7 +166,7 @@ curl -X PUT "https://api.mytulip.io/v2/claims/claim_xyz789/documents?autoSubmit=
 
 ### Auto-soumission avec `?autoSubmit=true`
 
-Ajoutez le paramètre `?autoSubmit=true` à l'URL de l'upload. Si, après cet upload, tous les documents obligatoires sont présents, le sinistre est automatiquement soumis. Dans ce cas, la réponse inclut également les informations de soumission :
+Ajoutez le paramètre `?autoSubmit=true` à l'URL du dépôt. Si, après ce dépôt, tous les documents obligatoires sont présents, le sinistre est automatiquement soumis. Dans ce cas, la réponse inclut également les informations de soumission :
 
 ```json
 {
@@ -182,7 +182,7 @@ Ajoutez le paramètre `?autoSubmit=true` à l'URL de l'upload. Si, après cet up
     "isRequiredDocument": true,
     "claim": {
       "id": "claim_xyz789",
-      "claimId": "internal_claim_abc",
+      "claimId": "claim_abc456",
       "status": "submitted",
       "canSubmit": false,
       "autoSubmitted": true,
@@ -193,12 +193,12 @@ Ajoutez le paramètre `?autoSubmit=true` à l'URL de l'upload. Si, après cet up
 ```
 
 <Callout type="info">
-**Quand utiliser `autoSubmit`** — Utilisez `autoSubmit=true` sur le dernier document uploadé pour éviter un appel supplémentaire à `/submit`. Si les documents obligatoires ne sont pas encore tous présents, le paramètre est ignoré et seul le document est uploadé.
+**Quand utiliser `autoSubmit`** — Utilisez `autoSubmit=true` sur le dernier document déposé pour éviter un appel supplémentaire à `/submit`. Si les documents obligatoires ne sont pas encore tous présents, le paramètre est ignoré et seul le document est déposé.
 </Callout>
 
 ## Étape 3 : Récupérer un document
 
-Utilisez cet endpoint pour obtenir une URL signée de téléchargement d'un document uploadé :
+Utilisez cet endpoint pour obtenir une URL signée de téléchargement d'un document déposé :
 
 ```bash
 curl -X GET https://api.mytulip.io/v2/claims/claim_xyz789/documents/doc_abc123 \
@@ -237,7 +237,7 @@ curl -X GET https://api.mytulip.io/v2/claims/claim_xyz789/documents/doc_abc123 \
 
 ## Étape 4 : Vérifier la soumissibilité
 
-Récupérez le sinistre pour vérifier si tous les documents obligatoires sont uploadés :
+Récupérez le sinistre pour vérifier si tous les documents obligatoires sont déposés :
 
 ```bash
 curl -X GET https://api.mytulip.io/v2/claims/claim_xyz789 \
@@ -251,7 +251,7 @@ Vérifiez le champ `canSubmit` dans `data.claim` :
 ## Étape 5 : Soumettre le sinistre
 
 <Callout type="info">
-**Étape optionnelle si vous utilisez `autoSubmit`** — Si vous avez utilisé `?autoSubmit=true` lors de l'upload du dernier document et que la réponse contenait un objet `claim` avec `autoSubmitted: true`, le sinistre est déjà soumis. Vous pouvez passer cette étape.
+**Étape optionnelle si vous utilisez `autoSubmit`** — Si vous avez utilisé `?autoSubmit=true` lors du dépôt du dernier document et que la réponse contenait un objet `claim` avec `autoSubmitted: true`, le sinistre est déjà soumis. Vous pouvez passer cette étape.
 </Callout>
 
 ```bash
@@ -267,7 +267,7 @@ curl -X POST https://api.mytulip.io/v2/claims/claim_xyz789/submit \
   "data": {
     "claim": {
       "id": "claim_xyz789",
-      "claimId": "internal_claim_abc",
+      "claimId": "claim_abc456",
       "status": "submitted",
       "canSubmit": false,
       "autoSubmitted": false,
@@ -343,10 +343,11 @@ Les erreurs sont retournées au format `{ "success": false, "error": { "code": 1
 |------|-----|-------------|
 | 3001 | Claim not editable | Le sinistre n'est pas modifiable (pas en statut draft) |
 | 3002 | Claim not submittable | Le sinistre a déjà été soumis ou annulé |
-| 3003 | Claim status locked | Le statut du sinistre est verrouillé (ex: déjà annulé) |
+| 3003 | Claim status locked | Le statut du sinistre est verrouillé (ex: déjà annulé, ou dépôt sur un sinistre clos, refusé ou abandonné) |
 | 3004 | Documents incomplete | Des documents obligatoires sont manquants pour la soumission |
 | 3005 | Document already validated | Le document a déjà été accepté et ne peut pas être remplacé |
 | 3007 | Active payment blocking | Un paiement est en cours, impossible d'annuler le sinistre |
+| 3008 | Document to sign | Le document est à signer : signé par l'assuré depuis son espace client Colibri, il ne se remplace pas par l'API |
 
 <Callout type="info">
 Pour la stratégie de retry et le format général des erreurs, consultez le guide [gestion des erreurs](/docs/guides/error-handling).
@@ -356,8 +357,8 @@ Pour la stratégie de retry et le format général des erreurs, consultez le gui
 
 ```
 POST   /claims                              — Créer la pré-déclaration (status: draft)
-PUT    /claims/{id}/documents               — Uploader un document (1 par requête)
-PUT    /claims/{id}/documents?autoSubmit=true — Uploader + auto-soumission si complet
+PUT    /claims/{id}/documents               — Déposer un document (1 par requête)
+PUT    /claims/{id}/documents?autoSubmit=true — Déposer + auto-soumission si complet
 GET    /claims/{id}                          — Vérifier canSubmit = true
 POST   /claims/{id}/submit                  — Soumettre (status: submitted)
 GET    /claims/{claimId}/documents/{docId}   — Obtenir l'URL signée d'un document

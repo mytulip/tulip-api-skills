@@ -9,65 +9,66 @@ description: Les 8 statuts d'un sinistre, les transitions possibles, l'auto-soum
 ┌─────────┐     ┌───────────┐     ┌───────────────┐     ┌────────┐
 │  draft  │ ──► │ submitted │ ──► │  in_progress  │ ──► │ closed │
 └─────────┘     └───────────┘     └───────────────┘     └────────┘
-     │                               ▲    │  │
-     │ (cancel)       (docs fournis) │    │  └──────────┬──────────┐
-     ▼                               │    │             │          │
-┌──────────┐                         │    │(docs requis)│          │
-│ archived │                      ┌──┴───────────┐ ┌───────────┐ ┌──────────┐
-└──────────┘                      │ pending_info │ │ abandoned │ │ rejected │
-                                  └──────────────┘ └───────────┘ └──────────┘
+  │   │                              ▲   ▲   │  │
+  │   ├──────── (soumission) ────────┘   │   │  └───────────┬──────────────┐
+  │   │                   (docs fournis) │   │ (docs requis)│              │
+  │   │                                  │   ▼              ▼              ▼
+  │   │  (soumission,             ┌──────┴───────┐   ┌───────────┐  ┌──────────┐
+  │   └─ pièces réclamées) ─────► │ pending_info │   │ abandoned │  │ rejected │
+  │                               └──────────────┘   └───────────┘  └──────────┘
+  │ (cancel)
+  ▼
+┌──────────┐
+│ archived │
+└──────────┘
 ```
 
 ## Statuts
 
 | Statut | Description | Actions possibles |
 |--------|-------------|-------------------|
-| `draft` | Pré-déclaration créée, en attente de documents | Modifier, uploader docs, soumettre, annuler |
-| `submitted` | Soumis, en attente de prise en charge | Lecture seule |
-| `in_progress` | En cours de traitement par Tulip | Lecture seule |
-| `pending_info` | Documents supplémentaires demandés | Uploader docs |
+| `draft` | Pré-déclaration créée, en attente de documents | Modifier, déposer des documents, soumettre, annuler |
+| `submitted` | Dossier soumis que Tulip n'a pas encore pris en charge. Dans la liste, tout dossier soumis garde ce statut, quel que soit son avancement (voir [Filtrage dans les listes](#filtrage-dans-les-listes)) | Lecture seule |
+| `in_progress` | En cours de traitement : c'est au gestionnaire Tulip d'agir | Lecture seule |
+| `pending_info` | Documents attendus du partenaire : pièces réclamées par Tulip au statut `waiting_for`, `expected` comprises, ou, pour une pré-déclaration soumise, pièce obligatoire (`mandatory`) de la configuration encore sans document | Déposer les documents |
 | `closed` | Traité et indemnisé | Lecture seule |
-| `rejected` | Rejeté par l'assureur | Lecture seule |
+| `rejected` | Rejeté par l'assureur. Un sinistre refusé est `rejected` ; un document refusé est `refused` (voir [Statuts d'un document](/docs/concepts/documents-management#statuts-dun-document)) | Lecture seule |
 | `abandoned` | Abandonné par l'assuré ou le partenaire | Lecture seule |
 | `archived` | Pré-déclaration annulée (depuis draft uniquement) | Lecture seule |
 
-## Mapping des statuts internes
+## Suivre le statut d'un sinistre
 
-L'API expose des statuts publics qui sont dérivés des statuts internes. Voici le mapping complet :
+Le statut d'un sinistre se lit dans `GET /claims/{id}`. Dans la liste `GET /claims`, une pré-déclaration soumise et un sinistre hors pré-déclaration sont toujours `submitted` (voir [Filtrage dans les listes](#filtrage-dans-les-listes)).
 
-### Statut ExternalClaim (interne) vers statut API (public)
+`GET /claims/{id}` renvoie :
 
-| Statut interne ExternalClaim | Statut API |
-|------------------------------|------------|
-| `unmatched` | `draft` |
-| `pending` | `draft` |
-| `matched` | Dépend du `userClaimStage` (voir ci-dessous) |
-| `abandonned` | `archived` |
+- `draft` tant que la pré-déclaration n'est pas soumise, et `archived` si vous l'annulez avant soumission ;
+- après la soumission, ou pour un sinistre hors pré-déclaration :
+  - `submitted` tant que Tulip n'a pas pris en charge le dossier : vous n'avez rien à faire ;
+  - `in_progress` quand c'est à Tulip d'agir, y compris pendant le règlement ou après une réouverture : vous n'avez rien à faire ;
+  - `pending_info` quand des pièces sont attendues de vous : déposez-les avec `PUT /claims/{id}/documents` ;
+  - `closed`, `rejected` ou `abandoned` quand le dossier est terminé : il n'accepte plus de documents.
 
-### userClaimStage (interne) vers statut API (public)
+Pour une pré-déclaration soumise, `GET /claims/{id}` renvoie `pending_info` tant qu'il reste une pièce à déposer dans `documentEntries` :
 
-Lorsque le sinistre est `matched` (soumis et lié à un sinistre interne), le statut API dépend du champ `userClaimStage` :
+- une pièce `mandatory` de la configuration qui n'a encore aucun document de son type sur le sinistre (un document de ce type suffit, quel que soit son statut : `to_verify`, `accepted`, `refused`…) ;
+- une pièce réclamée par Tulip au statut `waiting_for`, y compris une pièce `expected`. À la soumission par l'API, les pièces de la configuration que vous n'avez pas déposées sont réclamées par Tulip et gardent leur catégorie (par exemple `expected`) : `GET /claims/{id}` renvoie alors `pending_info` dès la soumission, jusqu'au dépôt de ces pièces.
 
-| userClaimStage | Statut API |
-|----------------|------------|
-| `waiting_for_tulip` | `in_progress` |
-| `document_to_send` | `pending_info` |
-| `waiting_for_payment` | `in_progress` |
-| `closed_paid` | `closed` |
-| `closed_rejected` | `rejected` |
-| `abandoned` | `abandoned` |
-| `reopened` | `in_progress` |
-| _(autre / absent)_ | `submitted` |
+Pour un sinistre hors pré-déclaration, `pending_info` signale les pièces réclamées par Tulip, au statut `waiting_for`.
+
+Une fois ces pièces déposées, `GET /claims/{id}` renvoie `in_progress`, ou `submitted` si Tulip n'a pas encore pris le dossier en charge. `closed`, `rejected` et `abandoned` l'emportent toujours : un dossier terminé n'est jamais renvoyé `pending_info`. Pour une pré-déclaration soumise, les changements de statut vous sont annoncés par `v2.claim.status.updated` (voir [Webhooks : statut](/docs/concepts/webhooks#statut)).
 
 ## Transitions
 
 | De | Vers | Déclencheur |
 |----|------|-------------|
 | `draft` | `submitted` | Appel `POST /claims/{id}/submit` ou auto-soumission |
+| `draft` | `in_progress` | Soumission par l'API quand Tulip ne réclame aucune pièce et prend le dossier en charge |
+| `draft` | `pending_info` | Soumission par l'API quand Tulip réclame des pièces dès la soumission (pièces de la configuration non déposées, `expected` comprises) |
 | `draft` | `archived` | Appel `DELETE /claims/{id}` |
 | `submitted` | `in_progress` | Prise en charge par Tulip |
-| `in_progress` | `pending_info` | Tulip demande des documents supplémentaires |
-| `pending_info` | `in_progress` | Documents fournis |
+| `in_progress` | `pending_info` | Tulip réclame une pièce, ou refuse une pièce déposée et la réclame à nouveau : la pièce est au statut `waiting_for` dans `documentEntries`. Pour une pré-déclaration soumise, aussi quand Tulip supprime le document déposé d'une pièce `mandatory` de la configuration |
+| `pending_info` | `in_progress` | Documents fournis ; pour une pré-déclaration soumise, dépôt de la dernière pièce au statut `waiting_for` (pièce `mandatory` manquante ou pièce réclamée par Tulip, `expected` comprise) |
 | `in_progress` | `closed` | Sinistre traité et indemnisé |
 | `in_progress` | `rejected` | Sinistre rejeté |
 | `in_progress` | `abandoned` | Abandon par l'assuré/partenaire (`DELETE /claims/{id}`) |
@@ -79,36 +80,37 @@ Chaque sinistre possède deux identifiants :
 | Champ | Disponible | Exemple |
 |-------|-----------|---------|
 | `id` | Dès la création | `claim_xyz789` |
-| `claimId` | Après soumission | `internal_claim_abc` |
+| `claimId` | Après soumission | `claim_abc456` |
 
 - `claimId` est `null` tant que le sinistre n'est pas soumis
 - **Les deux identifiants sont acceptés** pour tous les endpoints GET
 - Utilisez `id` si vous stockez la référence dès la création
+- Pour un sinistre hors pré-déclaration, `id` et `claimId` sont identiques (voir [Sinistres hors pré-déclaration](#sinistres-hors-pré-déclaration))
 
 ## Auto-soumission
 
 <Callout type="info">
-L'auto-soumission nécessite le query parameter `?autoSubmit=true` sur l'endpoint `PUT /claims/{id}/documents`. Sans ce paramètre, même lorsque tous les documents obligatoires sont uploadés, le sinistre reste en `draft` avec `canSubmit: true`.
+L'auto-soumission nécessite le query parameter `?autoSubmit=true` sur l'endpoint `PUT /claims/{id}/documents`. Sans ce paramètre, même lorsque tous les documents obligatoires sont déposés, le sinistre reste en `draft` avec `canSubmit: true`.
 </Callout>
 
 Le fonctionnement est le suivant :
 
-1. Le partenaire uploade un document via `PUT /claims/{id}/documents?autoSubmit=true`
-2. Après l'upload, l'API vérifie si tous les documents `mandatory` sont présents
+1. Le partenaire dépose un document via `PUT /claims/{id}/documents?autoSubmit=true`
+2. Après le dépôt, l'API vérifie si tous les documents `mandatory` sont présents
 3. Si oui **et** que `autoSubmit=true` est passé, le sinistre est automatiquement soumis
-4. La réponse contient alors `autoSubmitted: true` et le `claimId` du sinistre interne
+4. La réponse contient alors `autoSubmitted: true` et le `claimId` du sinistre créé par la soumission
 
 ### Webhook `v2.claim.draft.ready`
 
 <Callout type="info">
-Lorsque tous les documents obligatoires sont uploadés **sans** le paramètre `autoSubmit=true`, l'API émet le webhook `v2.claim.draft.ready`. Cet événement permet au partenaire de savoir que le sinistre est prêt à être soumis manuellement via `POST /claims/{id}/submit`.
+Lorsque tous les documents obligatoires sont déposés **sans** le paramètre `autoSubmit=true`, l'API émet le webhook `v2.claim.draft.ready`. Cet événement permet au partenaire de savoir que le sinistre est prêt à être soumis manuellement via `POST /claims/{id}/submit`.
 </Callout>
 
 ## Le champ `canSubmit`
 
 Le champ booléen `canSubmit` indique si le sinistre peut être soumis :
 
-- `true` : Tous les documents obligatoires (`category: "mandatory"`) sont uploadés
+- `true` : Tous les documents obligatoires (`category: "mandatory"`) sont déposés
 - `false` : Il manque des documents obligatoires
 
 Utilisez ce champ pour conditionner l'affichage du bouton de soumission dans votre interface.
@@ -119,9 +121,9 @@ Chaque type de document attendu est classé dans une catégorie qui détermine s
 
 | Catégorie | Description | Impact sur la soumission |
 |-----------|-------------|-------------------------|
-| `mandatory` | Document obligatoire | Bloque la soumission tant qu'il n'est pas uploadé |
+| `mandatory` | Document obligatoire | Bloque la soumission tant qu'il n'est pas déposé |
 | `expected` | Document attendu | Ne bloque pas la soumission mais peut retarder le traitement |
-| `optional` | Document complémentaire | Peut être uploadé à tout moment, aucun impact |
+| `optional` | Document complémentaire | Peut être déposé à tout moment, aucun impact |
 
 <Callout type="warn">
 Seuls les documents `mandatory` sont pris en compte pour le calcul de `canSubmit`. Les documents `expected` et `optional` n'affectent pas la possibilité de soumettre le sinistre.
@@ -131,7 +133,7 @@ Les catégories de documents sont déterminées par la configuration produit en 
 
 ## Types MIME autorisés et taille maximale
 
-Les fichiers uploadés via `PUT /claims/{id}/documents` doivent respecter les contraintes suivantes :
+Les fichiers déposés via `PUT /claims/{id}/documents` doivent respecter les contraintes suivantes :
 
 | Contrainte | Valeur |
 |------------|--------|
@@ -139,7 +141,7 @@ Les fichiers uploadés via `PUT /claims/{id}/documents` doivent respecter les co
 | Types MIME autorisés | `application/pdf`, `image/jpeg`, `image/png`, `image/webp`, `image/heic`, `image/heif` |
 
 <Callout type="info">
-Le type MIME est **auto-détecté** à partir du contenu du fichier (magic bytes). Il n'est pas nécessaire de le spécifier dans la requête. Si le type MIME détecté n'est pas dans la liste autorisée, l'upload est rejeté avec l'erreur `1003 INVALID_MIME_TYPE`.
+Le type MIME est **auto-détecté** à partir du contenu du fichier (magic bytes). Il n'est pas nécessaire de le spécifier dans la requête. Si le type MIME détecté n'est pas dans la liste autorisée, le dépôt est rejeté avec l'erreur `1003 INVALID_MIME_TYPE`.
 </Callout>
 
 ## Modification d'un sinistre
@@ -152,20 +154,27 @@ Les champs `type`, `subtype`, `claimAt` et `questions` sont figés dès la créa
 
 ## Annulation
 
-L'endpoint `DELETE /claims/{id}` permet d'annuler un sinistre. Le comportement varie selon le statut :
+L'endpoint `DELETE /claims/{id}` fait deux choses différentes selon ce qu'il vise :
 
-### Sinistre en `draft`
+- **Brouillon (`draft`)** : il annule la pré-déclaration, qui passe en `archived`.
+- **Pré-déclaration soumise ou sinistre hors pré-déclaration** : il **abandonne le sinistre que Tulip instruit**, qui passe en `abandoned`, sans retour possible par l'API.
 
-L'annulation est simple : le sinistre passe en statut `archived`. Le webhook `v2.claim.draft.archived` est émis.
+L'abandon est refusé si un paiement est en cours (`409`, code **3007 `ACTIVE_PAYMENT_BLOCKING`**) ou si le sinistre n'est plus ouvert (clos, refusé ou abandonné : `409`, code **3003 `CLAIM_STATUS_LOCKED`**).
 
-### Sinistre soumis (statut `submitted`, `in_progress`, etc.)
+### Pré-déclaration en `draft`
 
-L'annulation d'un sinistre soumis effectue les opérations suivantes :
+L'annulation est simple : la pré-déclaration passe en statut `archived`. Le webhook `v2.claim.draft.archived` est émis.
 
-1. Vérification qu'il n'y a pas de paiement actif (`executing`, `approved`, `pending_approval`)
-2. Si un paiement est en cours, l'annulation est bloquée avec l'erreur **3007 `ACTIVE_PAYMENT_BLOCKING`**
-3. Sinon, le sinistre interne est abandonné et le statut passe à `abandoned`
-4. Le webhook `v2.claim.abandoned` est émis
+### Pré-déclaration soumise ou sinistre hors pré-déclaration
+
+L'abandon d'un sinistre que Tulip instruit effectue les opérations suivantes :
+
+1. Vérification qu'aucun paiement n'est en cours
+2. Si un paiement est en cours, l'abandon est bloqué avec l'erreur **3007 `ACTIVE_PAYMENT_BLOCKING`**
+3. Sinon, le sinistre est abandonné et le statut passe à `abandoned`
+4. Les webhooks `v2.claim.status.updated` (vers `abandoned`) et `v2.claim.abandoned` sont émis, dans un ordre non garanti ; `v2.claim.abandoned` peut arriver en double (voir [Webhooks : bonnes pratiques](/docs/concepts/webhooks#bonnes-pratiques))
+
+`settlements` ne liste que les paiements effectués : un paiement en cours bloque l'abandon sans y apparaître.
 
 ### Corps de la requête
 
@@ -180,12 +189,12 @@ Le body est optionnel et accepte un champ `reason` :
 Si aucune raison n'est fournie, la raison par défaut est : _"Demande d'abandon initiée par le client"_.
 
 <Callout type="warn">
-Un sinistre déjà annulé (`archived` ou `abandoned`) ne peut pas être annulé à nouveau. L'API retourne l'erreur **3003 `CLAIM_STATUS_LOCKED`**.
+Un sinistre qui n'est plus ouvert (déjà `archived`, `abandoned`, clos ou refusé) ne peut pas être annulé ni abandonné. L'API retourne l'erreur **3003 `CLAIM_STATUS_LOCKED`**.
 </Callout>
 
 ## Types de règlement (settlements)
 
-Les règlements associés à un sinistre sont exposés dans le champ `settlements` du détail. Il existe 4 types :
+Les règlements associés à un sinistre sont exposés dans le champ `settlements` de `GET /claims/{id}`. Il existe 4 types :
 
 | Type | Description |
 |------|-------------|
@@ -204,18 +213,41 @@ Chaque règlement contient les champs suivants :
 | `paymentAt` | `string \| null` | Date de paiement effectif (ISO 8601), `null` si pas encore payé |
 | `createdAt` | `string` | Date de création du règlement (ISO 8601) |
 
+## Sinistres hors pré-déclaration
+
+Un sinistre hors pré-déclaration est un sinistre ouvert chez Tulip sans passer par une pré-déclaration de l'API. L'API v2 le renvoie avec les pré-déclarations du même `userId`, comme un sinistre déjà soumis.
+
+- **Liste** : `GET /v2/claims` renvoie les pré-déclarations et les sinistres hors pré-déclaration, du plus récent au plus ancien. Chaque sinistre n'apparaît qu'une fois. `offset` et `limit` paginent l'ensemble de la liste.
+- **Identifiants** : `id` est égal à `claimId`, l'identifiant du sinistre.
+- **Soumission** : `canSubmit` vaut toujours `false`.
+- **Statut** : dans la liste, un sinistre hors pré-déclaration est toujours `submitted`, et le filtre `status=submitted` le renvoie toujours (voir [Filtrage dans les listes](#filtrage-dans-les-listes)). Son statut (`in_progress`, `pending_info`, `closed`, `rejected`, `abandoned`) se lit dans `GET /v2/claims/{id}`.
+- **Champs** : les champs propres aux pré-déclarations peuvent valoir `null`.
+- **Appels possibles** : `GET /v2/claims/{id}`, `PUT /v2/claims/{id}/documents`, `GET /v2/claims/{claimId}/documents/{documentId}` et `DELETE /v2/claims/{id}` fonctionnent comme pour une pré-déclaration soumise. `?autoSubmit` est sans effet.
+  - Un document à signer (statut `to_sign`, voir [Gestion des documents](/docs/concepts/documents-management#statuts-dun-document)) est signé par l'assuré depuis son espace client Colibri : l'API ne le remplace pas (`409`, code `3008`).
+  - Un sinistre clos, refusé ou abandonné n'accepte plus aucun document (`409`, code `3003`, voir [Gestion des documents](/docs/concepts/documents-management#sinistre-terminé)).
+- **Abandon** : `DELETE /v2/claims/{id}` abandonne le sinistre que Tulip instruit, sans retour possible par l'API. Il est refusé si un paiement est en cours (`409`, code `3007`) ou si le sinistre n'est plus ouvert (`409`, code `3003`, voir [Annulation](#annulation)).
+- **Documents** : `documentEntries` ne contient que les documents réels du sinistre, ceux que le gestionnaire Tulip a demandés (`mandatory`) et ceux qui ont été déposés sans demande (`optional`), sans entrée calculée comme pour une pré-déclaration (voir [D'où viennent les entrées de `documentEntries`](/docs/concepts/documents-management#doù-viennent-les-entrées-de-documententries)).
+- **Appels refusés** : `PATCH /v2/claims/{id}` et `POST /v2/claims/{id}/submit` renvoient `409`, comme pour une pré-déclaration déjà soumise.
+- **Webhook** : dans `v2.claim.document.uploaded`, `claim.externalClaimId` est absent pour un sinistre hors pré-déclaration. Utilisez `claim.id` pour appeler l'API v2.
+
 ## Filtrage dans les listes
+
+Dans la liste `GET /claims`, le statut ne prend que trois valeurs : `draft`, `submitted` ou `archived`. **`submitted` signifie « dossier déposé pour analyse », pas « en cours de traitement »** : il comprend aussi des dossiers clos, refusés ou abandonnés. Le statut du sinistre se lit dans `GET /claims/{id}`.
 
 L'endpoint `GET /claims` supporte le filtre `status` avec trois valeurs :
 
-| Valeur du filtre | Statuts API retournés | Statut interne correspondant |
-|------------------|-----------------------|------------------------------|
-| `draft` | `draft` | `unmatched`, `pending` |
-| `submitted` | `submitted`, `in_progress`, `pending_info`, `closed`, `rejected`, `abandoned` | `matched` |
-| `cancelled` | `archived` | `abandonned` |
+| Valeur du filtre | Statut retourné dans la liste | Sinistres retournés |
+|------------------|-------------------------------|---------------------|
+| `draft` | `draft` | Pré-déclarations non soumises |
+| `submitted` | `submitted` | Pré-déclarations soumises et sinistres hors pré-déclaration, quel que soit leur statut dans `GET /claims/{id}` |
+| `cancelled` | `archived` | Pré-déclarations annulées avant soumission |
 
 <Callout type="info">
-Le filtre utilise la valeur **`cancelled`** (et non `archived`). Ce filtre retourne les sinistres dont le statut interne est `abandonned`, qui sont exposés avec le statut API `archived`.
+Le filtre utilise la valeur **`cancelled`** (et non `archived`). Il retourne les pré-déclarations annulées avant soumission, qui ont le statut `archived`.
+</Callout>
+
+<Callout type="info">
+Un sinistre hors pré-déclaration est toujours retourné par le filtre `submitted`. Les filtres `draft` et `cancelled` ne le retournent jamais : `archived` reste réservé à la pré-déclaration annulée avant soumission. Voir [Sinistres hors pré-déclaration](#sinistres-hors-pré-déclaration).
 </Callout>
 
 ## Codes d'erreur
@@ -250,12 +282,13 @@ L'API retourne des codes d'erreur structurés dans le champ `code` de la répons
 | Code | Nom | Description |
 |------|-----|-------------|
 | 3001 | `CLAIM_NOT_EDITABLE` | Le sinistre ne peut pas être modifié dans son état actuel |
-| 3002 | `CLAIM_NOT_SUBMITTABLE` | Le sinistre ne peut pas être soumis (documents manquants ou état invalide) |
-| 3003 | `CLAIM_STATUS_LOCKED` | Le statut du sinistre ne permet pas cette opération |
+| 3002 | `CLAIM_NOT_SUBMITTABLE` | Le sinistre ne peut pas être soumis (déjà soumis, annulé ou sinistre hors pré-déclaration) |
+| 3003 | `CLAIM_STATUS_LOCKED` | Le statut du sinistre ne permet pas cette opération (par exemple un dépôt sur un sinistre clos, refusé ou abandonné) |
 | 3004 | `DOCUMENTS_INCOMPLETE` | Tous les documents obligatoires ne sont pas présents |
 | 3005 | `DOCUMENT_ALREADY_VALIDATED` | Le document a déjà été validé et ne peut pas être remplacé |
 | 3006 | `INVALID_DOCUMENT_TYPE` | Le type de document n'est pas valide |
-| 3007 | `ACTIVE_PAYMENT_BLOCKING` | Un paiement est en cours, l'opération est bloquée |
+| 3007 | `ACTIVE_PAYMENT_BLOCKING` | Un paiement est en cours, l'abandon est bloqué (voir [Annulation](#annulation)) |
+| 3008 | `DOCUMENT_TO_SIGN` | Le document est à signer (`to_sign`) : il est signé par l'assuré depuis son espace client Colibri et ne se remplace pas par l'API |
 
 ### Erreurs d'authentification (401 Unauthorized)
 

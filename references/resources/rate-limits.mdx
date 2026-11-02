@@ -26,4 +26,4 @@ Si vos besoins dépassent les limites par défaut, contactez le [support](/docs/
 - **Implémentez un backoff exponentiel** pour les erreurs 429 et 99888
 - **Mettez en cache** les réponses GET quand c'est possible (produits, loueurs)
 - **Utilisez la pagination** pour les listes volumineuses au lieu de tout charger
-- **Regroupez les uploads** de documents en une seule requête PUT
+- **Déposez un document par requête** `PUT /claims/{id}/documents` : l'API n'accepte pas plusieurs documents dans une même requête

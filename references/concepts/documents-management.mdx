@@ -1,9 +1,11 @@
 ---
 title: Gestion des documents
-description: Catégories de documents, conditions dynamiques, méthodes d'upload, validation et URLs signées.
+description: Catégories de documents, conditions dynamiques, méthodes de dépôt, validation et URLs signées.
 ---
 
-Les documents justificatifs sont au coeur du processus de sinistre. Leur gestion suit des règles précises selon le type et le sous-type du sinistre.
+Les documents justificatifs sont au cœur du processus de sinistre. Leur gestion suit des règles précises selon le type et le sous-type du sinistre.
+
+Ces règles s'appliquent aussi aux sinistres hors pré-déclaration : le dépôt et le téléchargement fonctionnent comme pour une pré-déclaration soumise. `?autoSubmit` est sans effet. Un document à signer (`to_sign`) ne se remplace pas par l'API (voir [Règle de doublon](#règle-de-doublon)). Aucun document ne se dépose sur un sinistre terminé (voir [Sinistre terminé](#sinistre-terminé)).
 
 ## Catégories de documents
 
@@ -11,10 +13,20 @@ Chaque document requis pour un sinistre appartient à une catégorie :
 
 | Catégorie | Icône | Impact sur la soumission |
 |-----------|-------|------------------------|
-| **mandatory** | 🔴 | **Bloque la soumission** — doit être uploadé avant de soumettre |
+| **mandatory** | 🔴 | **Bloque la soumission** — doit être déposé avant de soumettre |
 | **expected** | 🟡 | Ne bloque pas la soumission, mais peut retarder le traitement |
-| **optional** | 🟢 | Peut être uploadé si applicable |
+| **optional** | 🟢 | Peut être déposé si applicable |
 | **conditional** | ⚡ | Devient obligatoire ou attendu selon les réponses aux questions |
+
+### D'où viennent les entrées de `documentEntries`
+
+`GET /v2/claims/{id}` liste les documents du sinistre dans `documentEntries`. Leur origine dépend du parcours :
+
+- **Pré-déclaration non soumise (brouillon)** : les entrées viennent de la configuration de pré-déclaration (type, sous-type et réponses aux questions), complétées par les documents déjà déposés. Un document déposé hors de cette configuration est `optional`.
+- **Pré-déclaration soumise** : mêmes entrées calculées, inchangées. Une pièce demandée ensuite par le gestionnaire Tulip, hors de cette configuration, est `mandatory` ; un document déposé sans demande reste `optional`.
+- **Sinistre hors pré-déclaration** : les entrées sont **uniquement les documents réels du sinistre**, ceux que le gestionnaire a demandés et ceux qui ont été déposés. Aucune entrée ne vient de la configuration de pré-déclaration : un sinistre sans document a une liste vide. Une pièce demandée par le gestionnaire est `mandatory`, y compris une fois déposée ou acceptée ; un document déposé sans demande est `optional`.
+
+Au dépôt, `isRequiredDocument` suit la même règle : `true` quand le fichier répond à une demande du gestionnaire (sur un sinistre hors pré-déclaration, ou sur une pré-déclaration soumise pour une pièce hors de sa configuration), ou quand le type est `mandatory` dans la configuration d'une pré-déclaration.
 
 ## Documents conditionnels
 
@@ -34,17 +46,34 @@ Consultez les [matrices par produit](/docs/concepts/questions-by-product) pour t
 ## Statuts d'un document
 
 ```
-waiting_for → to_verify → accepted | rejected
+waiting_for → to_verify → accepted | refused
 ```
 
 | Statut | Description |
 |--------|-------------|
-| `waiting_for` | En attente de téléchargement |
-| `to_verify` | Téléchargé, en attente de vérification par le gestionnaire |
+| `waiting_for` | En attente de dépôt |
+| `to_verify` | Déposé, en attente de vérification par le gestionnaire |
 | `accepted` | Accepté |
-| `rejected` | Refusé (voir `refusalReason` pour la raison) |
+| `refused` | Refusé (voir `refusalReason` pour la raison). Un document refusé est `refused` ; un sinistre refusé est `rejected` (voir [Flux des sinistres](/docs/concepts/claims-workflow#statuts)) |
+| `to_sign` | À signer par l'assuré depuis son espace client Colibri |
 
-## Méthodes d'upload
+Le statut `to_sign` est hors du cycle de dépôt ci-dessus : le gestionnaire Tulip demande à l'assuré de signer un document (par exemple une « Attestation de réparation »). L'assuré le signe depuis son espace client Colibri. Aucune route de l'API ne permet de le signer, et l'API ne le remplace pas (voir [Règle de doublon](#règle-de-doublon)). Tant qu'il n'est pas signé, il n'a pas de fichier : `GET /v2/claims/{claimId}/documents/{documentId}` répond `404`, code `2004`. Un document enregistré sans statut est renvoyé avec le statut `unknown`.
+
+### Règle de doublon
+
+Au dépôt (`PUT /v2/claims/{id}/documents`), un document du même type au statut `waiting_for` ou `to_verify` est remplacé par le fichier déposé, qui passe à `to_verify`. Un document du même type déjà `accepted` ne peut plus être remplacé : quand aucun document du type n'est `waiting_for` ni `to_verify`, le dépôt répond `409`, code `3005` ; sinon, c'est ce document remplaçable qui est remplacé. Un document du même type au statut `to_sign` ne peut pas être remplacé non plus (`409`, code `3008`) : il est signé par l'assuré depuis son espace client Colibri, et rien n'est enregistré. Un document `refused` n'est jamais remplacé : quand aucun autre document du même type n'est `waiting_for`, `to_verify`, `accepted` ou `to_sign`, le dépôt crée un nouveau document, et le document refusé reste visible avec sa raison (`refusalReason`).
+
+Quand le sinistre porte plusieurs documents du même type, une demande du gestionnaire en attente de son fichier (`waiting_for`), à défaut une demande déjà déposée et pas encore vérifiée (`to_verify`), est remplacée en priorité : le fichier y répond, sous l'`id` de la demande. Les autres documents du type restent tels quels, et un document déposé sans demande, même `accepted`, n'empêche pas de répondre à la demande. Le code `3008` s'applique toujours dès qu'un document du type est `to_sign`.
+
+Le type est comparé, au dépôt comme dans `documentEntries`, sans tenir compte des formes Unicode (normalisation NFC), et l'apostrophe typographique ’ y vaut ' : « Facture d’achat », avec une apostrophe typographique, est le même type que « Facture d'achat ». La casse et les espaces comptent. Un document remplacé garde le type sous lequel il est enregistré. Un nouveau document dont le type équivaut à un type de la configuration de la pré-déclaration, ou à un type demandé par le gestionnaire, est enregistré sous sa forme configurée, et la réponse sert ce type.
+
+### Sinistre terminé
+
+Un sinistre clos (`closed`), refusé (`rejected`) ou abandonné (`abandoned`, ou `archived` pour une pré-déclaration annulée) n'accepte plus aucun document : `PUT /v2/claims/{id}/documents` répond `409`, code `3003`, et rien n'est enregistré. La règle vaut pour un sinistre hors pré-déclaration comme pour une pré-déclaration soumise, et passe avant la règle de doublon : le code est `3003` même si un document du même type est `accepted` ou `to_sign`. Un sinistre rouvert accepte de nouveau les documents. Sur un sinistre terminé, une pièce peut rester affichée `mandatory` ou au statut `waiting_for` : elle ne s'attend plus, et ne se dépose plus.
+
+## Méthodes de dépôt
+
+Chaque dépôt envoie un seul document, en JSON ou en multipart/form-data. Le fichier fait 20 Mo au plus : au-delà, le dépôt répond `400`, code `1002`, dans les deux formats. Formats acceptés : PDF, JPEG, PNG, WebP, HEIC et HEIF.
 
 ### JSON avec base64
 
@@ -52,17 +81,22 @@ waiting_for → to_verify → accepted | rejected
 PUT /v2/claims/{id}/documents
 Content-Type: application/json
 
-[
-  {
-    "type": "Dépôt de plainte",
-    "title": "Plainte du 15/01/2024",
-    "filename": "plainte.pdf",
-    "content": "JVBERi0xLjQKJeLjz9MK..."
-  }
-]
+{
+  "type": "Dépôt de plainte",
+  "title": "Plainte du 15/01/2024",
+  "filename": "plainte.pdf",
+  "content": "JVBERi0xLjQKJeLjz9MK..."
+}
 ```
 
 ### Multipart form-data
+
+La requête porte deux parties, toutes deux obligatoires :
+
+- `meta` : un objet JSON avec `type`, `title` et, facultatif, `comment` ;
+- `file` : le fichier. Si la requête porte plusieurs parties `file`, seule la dernière est prise en compte.
+
+La référence API (`PUT /v2/claims/{id}/documents`) ne décrit que le corps JSON ; ce format multipart est accepté au même titre.
 
 ```
 PUT /v2/claims/{id}/documents
@@ -104,12 +138,12 @@ La réponse contient une **URL signée** (`downloadUrl`) pour télécharger le f
 |-------|------|-------------|
 | `id` | string | Identifiant unique du document |
 | `type` | string | Type de document (ex: "Dépôt de plainte") |
-| `title` | string | Titre donné par l'uploloader |
+| `title` | string | Titre donné au document lors de son dépôt |
 | `mimeType` | string | Type MIME détecté |
 | `status` | string | Statut actuel |
-| `refusalReason` | string \| null | Raison du refus si rejeté |
+| `refusalReason` | string \| null | Raison du refus, pour un document `refused` |
 | `note` | string \| null | Note du gestionnaire |
-| `uploadedAt` | string \| null | Date d'upload |
+| `uploadedAt` | string \| null | Date de dépôt |
 
 ## Erreurs courantes
 
@@ -119,6 +153,8 @@ La réponse contient une **URL signée** (`downloadUrl`) pour télécharger le f
 | 1003 | Type MIME invalide (détecté depuis le contenu) |
 | 1005 | Encodage base64 invalide |
 | 1006 | Content-Type non supporté |
+| 3003 | Sinistre clos, refusé ou abandonné : plus aucun document ne s'y dépose |
 | 3004 | Documents incomplets pour soumission |
 | 3005 | Document déjà validé |
 | 3006 | Type de document invalide |
+| 3008 | Document à signer : signé par l'assuré depuis son espace client Colibri, il ne se remplace pas par l'API |

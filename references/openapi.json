@@ -26,7 +26,7 @@
       "post": {
         "operationId": "createClaim",
         "summary": "Créer un sinistre (pré-déclaration)",
-        "description": "Ce endpoint permet de créer une nouvelle pré-déclaration de sinistre en statut brouillon. Les questions obligatoires doivent être renseignées selon le type et sous-type du sinistre.",
+        "description": "Cet endpoint permet de créer une nouvelle pré-déclaration de sinistre en statut brouillon. Les questions obligatoires doivent être renseignées selon le type et sous-type du sinistre.",
         "parameters": [],
         "responses": {
           "200": {
@@ -82,7 +82,7 @@
       "get": {
         "operationId": "listClaims",
         "summary": "Lister les sinistres",
-        "description": "Ce endpoint permet de récupérer la liste des sinistres d'un utilisateur avec pagination.",
+        "description": "Renvoie les sinistres d'un utilisateur, du plus récent au plus ancien : ses pré-déclarations et ses sinistres hors pré-déclaration. Chaque sinistre n'apparaît qu'une fois. Les paramètres offset et limit paginent l'ensemble de la liste. Pour un sinistre hors pré-déclaration, id et claimId valent l'identifiant du sinistre, et canSubmit vaut false. Le statut de la liste vaut draft, submitted ou archived : submitted signifie « dossier déposé pour analyse », pas « en cours de traitement », et comprend des dossiers clos, refusés ou abandonnés. Un sinistre hors pré-déclaration est toujours submitted dans la liste. Le statut du sinistre se lit dans son détail (Récupérer un sinistre).",
         "parameters": [
           {
             "name": "userId",
@@ -167,7 +167,7 @@
       "get": {
         "operationId": "getDocument",
         "summary": "Récupérer un document",
-        "description": "Ce endpoint permet de récupérer les détails d'un document avec une URL de téléchargement signée. L'URL expire après 1 heure.",
+        "description": "Cet endpoint permet de récupérer les détails d'un document avec une URL de téléchargement signée. L'URL expire après 1 heure. Fonctionne aussi pour les documents d'un sinistre hors pré-déclaration.",
         "parameters": [
           {
             "name": "claimId",
@@ -242,7 +242,7 @@
       "get": {
         "operationId": "getClaim",
         "summary": "Récupérer un sinistre",
-        "description": "Ce endpoint permet de récupérer les détails complets d'un sinistre. L'identifiant peut être celui de la pré-déclaration ou du sinistre interne.",
+        "description": "Cet endpoint permet de récupérer les détails complets d'un sinistre. L'identifiant peut être celui de la pré-déclaration (id) ou celui du sinistre (claimId). Fonctionne aussi pour un sinistre hors pré-déclaration, avec l'identifiant du sinistre. Le statut du sinistre (in_progress, pending_info, closed, rejected, abandoned) se lit ici, pour une pré-déclaration soumise comme pour un sinistre hors pré-déclaration.",
         "parameters": [
           {
             "name": "id",
@@ -307,7 +307,7 @@
       "patch": {
         "operationId": "updateClaim",
         "summary": "Mettre à jour un sinistre",
-        "description": "Ce endpoint permet de mettre à jour la description et/ou le lieu d'un sinistre. La modification n'est possible qu'en statut draft.",
+        "description": "Cet endpoint permet de mettre à jour la description et/ou le lieu d'un sinistre. La modification n'est possible qu'en statut draft. Pour un sinistre hors pré-déclaration, la modification est refusée (409), comme pour une pré-déclaration déjà soumise.",
         "parameters": [
           {
             "name": "id",
@@ -382,7 +382,7 @@
       "delete": {
         "operationId": "cancelClaim",
         "summary": "Annuler ou abandonner un sinistre",
-        "description": "Ce endpoint permet d'annuler une pré-déclaration (passage en archived depuis draft) ou d'abandonner un sinistre en cours de traitement.",
+        "description": "Sur un brouillon (draft), cet endpoint annule la pré-déclaration : elle passe en archived (webhook v2.claim.draft.archived). Sur une pré-déclaration soumise ou un sinistre hors pré-déclaration, il abandonne le sinistre que Tulip instruit : il passe en abandoned (webhook v2.claim.abandoned), sans retour possible par l'API. L'abandon est refusé si un paiement est en cours (409, code 3007) ou si le sinistre n'est plus ouvert (409, code 3003). settlements ne liste que les paiements effectués : un paiement en cours bloque l'abandon sans y apparaître.",
         "parameters": [
           {
             "name": "id",
@@ -448,8 +448,8 @@
     "/claims/{id}/documents": {
       "put": {
         "operationId": "uploadDocuments",
-        "summary": "Télécharger des documents",
-        "description": "Ce endpoint permet de télécharger des documents pour un sinistre. Supporte l'upload multipart (formulaire avec fichier) ou JSON (contenu en base64). Le type MIME est détecté automatiquement à partir du contenu du fichier.",
+        "summary": "Déposer un document",
+        "description": "Cet endpoint dépose un seul document par requête : un objet JSON (contenu en base64) ou un multipart/form-data. Le schéma du corps ne décrit que l'objet JSON.\n\nEn multipart/form-data, la requête porte deux parties obligatoires : `meta`, un objet JSON avec `type`, `title` et, facultatif, `comment` ; `file`, le fichier. Si la requête porte plusieurs parties `file`, seule la dernière est prise en compte.\n\nLe fichier fait 20 Mo au plus : au-delà, le dépôt répond 400, code 1002, dans les deux formats. Formats acceptés : PDF, JPEG, PNG, WebP, HEIC et HEIF. Le format est détecté à partir du contenu du fichier.\n\nUn document du même type au statut waiting_for ou to_verify est remplacé par le fichier déposé, qui passe à to_verify. Un document du même type déjà accepted ne peut plus être remplacé : le dépôt répond 409, code 3005, seulement si aucun document du type n'est waiting_for ni to_verify.\n\nUn document du même type à signer (statut to_sign, par exemple une « Attestation de réparation ») ne se remplace pas non plus (409, code 3008) : l'assuré le signe depuis son espace client Colibri, aucune route de l'API ne permet de le signer.\n\nUn sinistre clos, refusé ou abandonné n'accepte plus aucun document (409, code 3003), avant toute règle de doublon. Fonctionne aussi pour un sinistre hors pré-déclaration : le paramètre autoSubmit est alors sans effet.",
         "parameters": [
           {
             "name": "id",
@@ -510,10 +510,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/JsonDocumentBody"
-                }
+                "$ref": "#/components/schemas/JsonDocumentBody"
               }
             }
           }
@@ -529,7 +526,7 @@
       "post": {
         "operationId": "submitClaim",
         "summary": "Soumettre un sinistre",
-        "description": "Ce endpoint permet de soumettre un sinistre pour traitement. Tous les documents obligatoires doivent avoir été téléchargés. Le sinistre peut aussi être soumis automatiquement lorsque tous les documents obligatoires sont fournis.",
+        "description": "Cet endpoint permet de soumettre un sinistre pour traitement. Tous les documents obligatoires doivent avoir été déposés. Le sinistre peut aussi être soumis automatiquement lorsque tous les documents obligatoires sont fournis. Pour un sinistre hors pré-déclaration, la soumission est refusée (409), comme pour une pré-déclaration déjà soumise.",
         "parameters": [
           {
             "name": "id",
@@ -596,7 +593,7 @@
       "get": {
         "operationId": "retrieveContracts",
         "summary": "Récupérer un ensemble de contrats",
-        "description": "Ce endpoint permet de récupérer un ensemble de contrats",
+        "description": "Cet endpoint permet de récupérer un ensemble de contrats",
         "parameters": [
           {
             "name": "uid",
@@ -724,7 +721,7 @@
       "post": {
         "operationId": "createContract",
         "summary": "Créer un contrat",
-        "description": "Ce endpoint permet de créer un contrat. Si le paramètre preview est à true, ceci ne créera pas le contrat mais retournera un contrat prévisualisé.",
+        "description": "Cet endpoint permet de créer un contrat. Si le paramètre preview est à true, ceci ne créera pas le contrat mais retournera un contrat prévisualisé.",
         "parameters": [
           {
             "name": "preview",
@@ -1103,7 +1100,7 @@
       "post": {
         "operationId": "bulkAutomaticRenewals",
         "summary": "Actions en masse sur les renouvellements automatiques",
-        "description": "Ce endpoint permet d'effectuer des actions en masse sur les renouvellements automatiques de tous vos contrats : ajouter, refuser, activer/désactiver les notifications.",
+        "description": "Cet endpoint permet d'effectuer des actions en masse sur les renouvellements automatiques de tous vos contrats : ajouter, refuser, activer/désactiver les notifications.",
         "parameters": [],
         "responses": {
           "200": {
@@ -1213,7 +1210,7 @@
       "get": {
         "operationId": "retrieveContract",
         "summary": "Récupérer un contrat",
-        "description": "Ce endpoint permet de récupérer un contrat",
+        "description": "Cet endpoint permet de récupérer un contrat",
         "parameters": [
           {
             "name": "contractId",
@@ -1310,7 +1307,7 @@
       "delete": {
         "operationId": "cancelContract",
         "summary": "Résiler un contrat",
-        "description": "Ce endpoint permet de résilier ou annuler un contrat. Si le paramètre preview est à true, ceci ne résiliera pas le contrat mais retournera un contrat prévisualisé.\n\nSi le contrat a démarré depuis peu, il sera annulé.",
+        "description": "Cet endpoint permet de résilier ou annuler un contrat. Si le paramètre preview est à true, ceci ne résiliera pas le contrat mais retournera un contrat prévisualisé.\n\nSi le contrat a démarré depuis peu, il sera annulé.",
         "parameters": [
           {
             "name": "preview",
@@ -1451,7 +1448,7 @@
       "patch": {
         "operationId": "updateContract",
         "summary": "Mettre à jour un contrat",
-        "description": "Ce endpoint permet de mettre à jour un contrat. Si le paramètre preview est à true, ceci ne mettra pas à jour le contrat mais retournera un contrat prévisualisé.",
+        "description": "Cet endpoint permet de mettre à jour un contrat. Si le paramètre preview est à true, ceci ne mettra pas à jour le contrat mais retournera un contrat prévisualisé.",
         "parameters": [
           {
             "name": "preview",
@@ -1690,7 +1687,7 @@
       "post": {
         "operationId": "createAutomaticRenewal",
         "summary": "Créer un renouvellement automatique",
-        "description": "Ce endpoint permet de créer ou configurer un renouvellement automatique (tacite reconduction) pour un contrat. Le contrat doit être ouvert.",
+        "description": "Cet endpoint permet de créer ou configurer un renouvellement automatique (tacite reconduction) pour un contrat. Le contrat doit être ouvert.",
         "parameters": [
           {
             "name": "contractId",
@@ -1815,7 +1812,7 @@
       "get": {
         "operationId": "getCurrentAutomaticRenewal",
         "summary": "Récupérer le renouvellement automatique actif",
-        "description": "Ce endpoint permet de récupérer le renouvellement automatique actuellement actif pour un contrat.",
+        "description": "Cet endpoint permet de récupérer le renouvellement automatique actuellement actif pour un contrat.",
         "parameters": [
           {
             "name": "contractId",
@@ -1924,7 +1921,7 @@
       "get": {
         "operationId": "getAutomaticRenewalById",
         "summary": "Récupérer un renouvellement automatique",
-        "description": "Ce endpoint permet de récupérer un renouvellement automatique spécifique par son identifiant.",
+        "description": "Cet endpoint permet de récupérer un renouvellement automatique spécifique par son identifiant.",
         "parameters": [
           {
             "name": "contractId",
@@ -2039,7 +2036,7 @@
       "patch": {
         "operationId": "updateAutomaticRenewal",
         "summary": "Mettre à jour un renouvellement automatique",
-        "description": "Ce endpoint permet de modifier un renouvellement automatique. Seuls les champs use_notification, rejected et duration_months sont modifiables. Le contrat doit être ouvert et le renouvellement ne doit pas avoir été déjà appliqué.",
+        "description": "Cet endpoint permet de modifier un renouvellement automatique. Seuls les champs use_notification, rejected et duration_months sont modifiables. Le contrat doit être ouvert et le renouvellement ne doit pas avoir été déjà appliqué.",
         "parameters": [
           {
             "name": "contractId",
@@ -2214,7 +2211,7 @@
       "get": {
         "operationId": "listAutomaticRenewals",
         "summary": "Lister les renouvellements automatiques",
-        "description": "Ce endpoint permet de récupérer l'historique de tous les renouvellements automatiques d'un contrat.",
+        "description": "Cet endpoint permet de récupérer l'historique de tous les renouvellements automatiques d'un contrat.",
         "parameters": [
           {
             "name": "contractId",
@@ -2323,7 +2320,7 @@
       "post": {
         "operationId": "createProductFromContract",
         "summary": "Ajouter un produit à un contrat",
-        "description": "Ce endpoint permet d'ajouter un produit à un contrat.",
+        "description": "Cet endpoint permet d'ajouter un produit à un contrat.",
         "parameters": [
           {
             "name": "preview",
@@ -2470,7 +2467,7 @@
       "delete": {
         "operationId": "deleteProductFromContract",
         "summary": "Supprimer un produit d'un contrat",
-        "description": "Ce endpoint permet de supprimer un produit d'un contrat.",
+        "description": "Cet endpoint permet de supprimer un produit d'un contrat.",
         "parameters": [
           {
             "name": "preview",
@@ -2610,7 +2607,7 @@
       "get": {
         "operationId": "getCitiesByZipcode",
         "summary": "Récupérer les villes par code postal",
-        "description": "Ce endpoint permet de récupérer les villes correspondant à un code postal pour un pays donné. Les pays supportés sont la France (FR), l'Italie (IT) et la Réunion (incluse dans FR).",
+        "description": "Cet endpoint permet de récupérer les villes correspondant à un code postal pour un pays donné. Les pays supportés sont la France (FR), l'Italie (IT) et la Réunion (incluse dans FR).",
         "parameters": [
           {
             "name": "country",
@@ -2716,7 +2713,7 @@
       "get": {
         "operationId": "getCitiesSuggestions",
         "summary": "Rechercher des villes par suggestion",
-        "description": "Ce endpoint permet de rechercher des villes et codes postaux par recherche partielle (fuzzy search). Utile pour l'auto-complétion d'adresses. Retourne jusqu'à 30 suggestions triées par score de confiance.",
+        "description": "Cet endpoint permet de rechercher des villes et codes postaux par recherche partielle (fuzzy search). Utile pour l'auto-complétion d'adresses. Retourne jusqu'à 30 suggestions triées par score de confiance.",
         "parameters": [
           {
             "name": "country",
@@ -2822,7 +2819,7 @@
       "get": {
         "operationId": "retrieveProducts",
         "summary": "Lister les produits",
-        "description": "Ce endpoint permet de récupérer la liste des produits disponibles.",
+        "description": "Cet endpoint permet de récupérer la liste des produits disponibles.",
         "parameters": [],
         "responses": {
           "200": {
@@ -2881,7 +2878,7 @@
       "post": {
         "operationId": "createProduct",
         "summary": "Créer un produit",
-        "description": "Ce endpoint permet de créer un nouveau produit.",
+        "description": "Cet endpoint permet de créer un nouveau produit.",
         "parameters": [],
         "responses": {
           "201": {
@@ -2949,7 +2946,7 @@
       "get": {
         "operationId": "retrieveProduct",
         "summary": "Récupérer un produit",
-        "description": "Ce endpoint permet de récupérer les informations d’un produit spécifique.",
+        "description": "Cet endpoint permet de récupérer les informations d’un produit spécifique.",
         "parameters": [
           {
             "name": "productId",
@@ -3014,7 +3011,7 @@
       "patch": {
         "operationId": "updateProduct",
         "summary": "Mettre à jour un produit",
-        "description": "Ce endpoint permet de mettre à jour un produit existant.",
+        "description": "Cet endpoint permet de mettre à jour un produit existant.",
         "parameters": [
           {
             "name": "productId",
@@ -3089,7 +3086,7 @@
       "delete": {
         "operationId": "deleteProduct",
         "summary": "Supprimer un produit",
-        "description": "Ce endpoint permet de supprimer un produit.",
+        "description": "Cet endpoint permet de supprimer un produit.",
         "parameters": [
           {
             "name": "productId",
@@ -3156,7 +3153,7 @@
       "get": {
         "operationId": "retrieveRenters",
         "summary": "Lister les loueurs",
-        "description": "Ce endpoint permet de récupérer la liste des loueurs disponibles.",
+        "description": "Cet endpoint permet de récupérer la liste des loueurs disponibles.",
         "parameters": [],
         "responses": {
           "200": {
@@ -3215,7 +3212,7 @@
       "post": {
         "operationId": "addRenter",
         "summary": "Ajouter un loueur",
-        "description": "Ce endpoint permet d’ajouter un loueur à une clé API existante.",
+        "description": "Cet endpoint permet d’ajouter un loueur à une clé API existante.",
         "parameters": [],
         "responses": {
           "201": {
@@ -3283,7 +3280,7 @@
       "get": {
         "operationId": "retrieveRenter",
         "summary": "Récupérer un loueur",
-        "description": "Ce endpoint permet de récupérer les informations d'un loueur spécifique.",
+        "description": "Cet endpoint permet de récupérer les informations d'un loueur spécifique.",
         "parameters": [
           {
             "name": "renterId",
@@ -3785,13 +3782,13 @@
                 "type": "null"
               }
             ],
-            "description": "La date de téléchargement (null si pas encore téléchargé)",
+            "description": "La date de dépôt (null si pas encore déposé)",
             "examples": [
               "2024-01-16T10:30:00Z"
             ]
           }
         },
-        "description": "Un document sérialisé (utilisé dans la réponse d'upload)"
+        "description": "Un document sérialisé (utilisé dans la réponse de dépôt)"
       },
       "ClaimDocumentStatus": {
         "type": "string",
@@ -3799,9 +3796,10 @@
           "waiting_for",
           "to_verify",
           "accepted",
-          "rejected"
+          "refused",
+          "to_sign"
         ],
-        "description": "Le statut d'un document. \n\n- **waiting_for**: En attente de téléchargement \n- **to_verify**: Téléchargé, en attente de vérification \n- **accepted**: Accepté par le gestionnaire \n- **rejected**: Refusé par le gestionnaire",
+        "description": "Le statut d'un document. \n\n- **waiting_for**: En attente de dépôt \n- **to_verify**: Déposé, en attente de vérification \n- **accepted**: Accepté par le gestionnaire \n- **refused**: Refusé par le gestionnaire \n- **to_sign**: À signer par l'assuré depuis son espace client Colibri \n\nAvec le statut **to_sign**, le gestionnaire Tulip demande à l'assuré de signer un document (par exemple une « Attestation de réparation »). L'assuré le signe depuis son espace client Colibri. Aucune route de l'API ne permet de le signer, et l'API ne le remplace pas (409, code 3008). \n\nUn document enregistré sans statut est renvoyé avec le statut **unknown**.",
         "examples": [
           "waiting_for"
         ]
@@ -3914,7 +3912,7 @@
                 "type": "null"
               }
             ],
-            "description": "La date de téléchargement (null si pas encore téléchargé)",
+            "description": "La date de dépôt (null si pas encore déposé)",
             "examples": [
               "2024-01-16T10:30:00Z"
             ]
@@ -4193,7 +4191,7 @@
                 "$ref": "#/components/schemas/ClaimId"
               }
             ],
-            "description": "L'identifiant de la pré-déclaration",
+            "description": "L'identifiant de la pré-déclaration (pour un sinistre hors pré-déclaration : l'identifiant du sinistre, identique à claimId)",
             "examples": [
               "claim_xyz789"
             ]
@@ -4207,9 +4205,9 @@
                 "type": "null"
               }
             ],
-            "description": "L'identifiant interne du sinistre (null tant que non soumis)",
+            "description": "L'identifiant du sinistre : attribué à la soumission d'une pré-déclaration (null avant) ; pour un sinistre hors pré-déclaration, toujours renseigné et égal à id",
             "examples": [
-              "internal_claim_abc"
+              "claim_abc456"
             ]
           },
           "userId": {
@@ -4230,7 +4228,7 @@
           },
           "canSubmit": {
             "type": "boolean",
-            "description": "Indique si le sinistre peut être soumis (tous les documents obligatoires sont téléchargés)",
+            "description": "Indique si le sinistre peut être soumis (tous les documents obligatoires sont déposés)",
             "examples": [
               false
             ]
@@ -4441,7 +4439,7 @@
           "abandoned",
           "archived"
         ],
-        "description": "Le statut du sinistre dans le flux de traitement. \n\n- **draft**: Pré-déclaration créée, en attente de documents et soumission \n- **submitted**: Sinistre soumis, en attente de prise en charge par Tulip \n- **in_progress**: Sinistre en cours de traitement par Tulip \n- **pending_info**: Documents supplémentaires demandés, retourne à in_progress une fois fournis \n- **closed**: Sinistre traité et indemnisé \n- **rejected**: Sinistre rejeté par l'assureur \n- **abandoned**: Sinistre abandonné par l'assuré ou le partenaire \n- **archived**: Pré-déclaration annulée par le partenaire (uniquement depuis draft)",
+        "description": "Le statut du sinistre dans le flux de traitement. \n\n- **draft**: Pré-déclaration créée, en attente de documents et soumission \n- **submitted**: Sinistre soumis, pas encore pris en charge par Tulip. Dans la liste, tout sinistre soumis garde ce statut, quel que soit son avancement : son statut se lit dans GET /claims/{id} \n- **in_progress**: Sinistre en cours de traitement par Tulip \n- **pending_info**: Documents attendus du partenaire : pièces réclamées par Tulip au statut waiting_for, ou, pour une pré-déclaration soumise, pièce mandatory encore sans document. Une fois les pièces déposées, retourne à in_progress, ou à submitted si Tulip n'a pas encore pris le dossier en charge \n- **closed**: Sinistre traité et indemnisé \n- **rejected**: Sinistre rejeté par l'assureur \n- **abandoned**: Sinistre abandonné par l'assuré ou le partenaire \n- **archived**: Pré-déclaration annulée par le partenaire (uniquement depuis draft)",
         "examples": [
           "draft"
         ]
@@ -4453,7 +4451,7 @@
           "submitted",
           "cancelled"
         ],
-        "description": "Le filtre de statut pour la liste des sinistres. \n\n- **draft**: Pré-déclarations en cours \n- **submitted**: Sinistres soumis et en traitement \n- **cancelled**: Sinistres annulés/abandonnés"
+        "description": "Le filtre de statut pour la liste des sinistres. submitted signifie « dossier déposé pour analyse », pas « en cours de traitement » : une pré-déclaration soumise et un sinistre hors pré-déclaration y sont retournés avec le statut submitted, quel que soit leur stade, dossiers clos, refusés et abandonnés compris. Le statut du sinistre se lit dans GET /claims/{id}. \n\n- **draft**: Pré-déclarations en cours \n- **submitted**: Pré-déclarations soumises et sinistres hors pré-déclaration, tous retournés avec le statut submitted \n- **cancelled**: Pré-déclarations annulées avant soumission"
       },
       "ClaimSubtype": {
         "type": "string",
@@ -4492,7 +4490,7 @@
                 "$ref": "#/components/schemas/ClaimId"
               }
             ],
-            "description": "L'identifiant de la pré-déclaration",
+            "description": "L'identifiant de la pré-déclaration (pour un sinistre hors pré-déclaration : l'identifiant du sinistre, identique à claimId)",
             "examples": [
               "claim_xyz789"
             ]
@@ -4506,7 +4504,7 @@
                 "type": "null"
               }
             ],
-            "description": "L'identifiant interne du sinistre (null tant que non soumis)"
+            "description": "L'identifiant du sinistre : attribué à la soumission d'une pré-déclaration (null avant) ; pour un sinistre hors pré-déclaration, toujours renseigné et égal à id"
           },
           "status": {
             "allOf": [
@@ -4514,11 +4512,11 @@
                 "$ref": "#/components/schemas/ClaimStatus"
               }
             ],
-            "description": "Le statut actuel du sinistre"
+            "description": "Le statut du sinistre dans la liste : draft, submitted ou archived. submitted signifie « dossier déposé pour analyse », pas « en cours de traitement » : il comprend des dossiers clos, refusés ou abandonnés. Le statut du sinistre se lit dans GET /claims/{id}."
           },
           "canSubmit": {
             "type": "boolean",
-            "description": "Indique si le sinistre peut être soumis",
+            "description": "Indique si le sinistre peut être soumis (toujours false pour un sinistre hors pré-déclaration)",
             "examples": [
               false
             ]
@@ -4598,7 +4596,7 @@
             ]
           }
         },
-        "description": "Le résumé d'un sinistre (version allégée pour les listes)"
+        "description": "Le résumé d'un sinistre (version allégée pour les listes) : une pré-déclaration, ou un sinistre hors pré-déclaration. Pour un sinistre hors pré-déclaration, id et claimId valent l'identifiant du sinistre et canSubmit vaut false. Dans la liste, status vaut draft, submitted ou archived : submitted signifie « dossier déposé pour analyse », pas « en cours de traitement », et comprend des dossiers clos, refusés ou abandonnés ; le statut du sinistre se lit dans GET /claims/{id}. Les champs propres aux pré-déclarations peuvent y valoir null."
       },
       "ClaimType": {
         "type": "string",
@@ -5337,7 +5335,7 @@
           "expected",
           "optional"
         ],
-        "description": "La catégorie d'importance d'un document. \n\n- **mandatory**: Obligatoire — doit être téléchargé avant la soumission \n- **expected**: Attendu — ne bloque pas la soumission mais peut retarder le traitement \n- **optional**: Optionnel — peut être téléchargé si applicable",
+        "description": "La catégorie d'importance d'un document. \n\n- **mandatory**: Obligatoire — doit être déposé avant la soumission \n- **expected**: Attendu — ne bloque pas la soumission mais peut retarder le traitement \n- **optional**: Optionnel — peut être déposé si applicable",
         "examples": [
           "mandatory"
         ]
@@ -5405,13 +5403,13 @@
                 "type": "null"
               }
             ],
-            "description": "La date de téléchargement (null si pas encore téléchargé)",
+            "description": "La date de dépôt (null si pas encore déposé)",
             "examples": [
               "2024-01-16T10:30:00Z"
             ]
           }
         },
-        "description": "Les détails du fichier document (lorsqu'il est téléchargé)"
+        "description": "Les détails du fichier document (lorsqu'il est déposé)"
       },
       "DocumentEntry": {
         "type": "object",
@@ -5454,7 +5452,7 @@
                 "type": "null"
               }
             ],
-            "description": "Les détails du document (null si pas encore téléchargé)"
+            "description": "Les détails du document (null si pas encore déposé)"
           }
         },
         "description": "Une entrée documentaire unifiée avec sa catégorie d'importance (obligatoire/attendu/optionnel)"
@@ -7733,7 +7731,7 @@
             ]
           }
         },
-        "description": "Le corps de la requête JSON pour uploader un document avec contenu en base64. Le type MIME est détecté automatiquement à partir du contenu du fichier."
+        "description": "Le corps de la requête JSON pour déposer un document avec contenu en base64. Le type MIME est détecté automatiquement à partir du contenu du fichier."
       },
       "ListClaimsErrorResponse": {
         "type": "object",
@@ -7790,7 +7788,7 @@
             "items": {
               "$ref": "#/components/schemas/ClaimSummary"
             },
-            "description": "La liste des sinistres"
+            "description": "La liste des sinistres : pré-déclarations et sinistres hors pré-déclaration, du plus récent au plus ancien"
           },
           "pagination": {
             "type": "object",
@@ -8462,9 +8460,9 @@
                 "$ref": "#/components/schemas/ClaimId"
               }
             ],
-            "description": "L'identifiant interne du sinistre attribué après soumission",
+            "description": "L'identifiant du sinistre, attribué à la soumission",
             "examples": [
-              "internal_claim_abc"
+              "claim_abc456"
             ]
           },
           "status": {
@@ -8483,7 +8481,7 @@
           },
           "autoSubmitted": {
             "type": "boolean",
-            "description": "Indique si le sinistre a été soumis automatiquement (lorsque tous les documents obligatoires sont téléchargés)",
+            "description": "Indique si le sinistre a été soumis automatiquement (lorsque tous les documents obligatoires sont déposés)",
             "examples": [
               false
             ]
@@ -8774,7 +8772,7 @@
             "description": "Les détails de l'erreur"
           }
         },
-        "description": "Erreur lors de l'upload de documents"
+        "description": "Erreur lors du dépôt de documents"
       },
       "UploadDocumentsSuccessResponse": {
         "type": "object",
@@ -8795,10 +8793,10 @@
             "items": {
               "$ref": "#/components/schemas/ClaimDocument"
             },
-            "description": "La liste des documents après upload"
+            "description": "La liste des documents après dépôt"
           }
         },
-        "description": "Réponse d'upload de documents réussie"
+        "description": "Réponse de dépôt de documents réussie"
       },
       "UserId": {
         "type": "string",

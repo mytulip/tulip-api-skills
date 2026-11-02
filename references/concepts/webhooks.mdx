@@ -48,7 +48,7 @@ Tous les payloads suivent cette structure :
 Le contenu de `data` dépend du type d'événement :
 - **Événements `v2.contract.*`** — contient le contrat complet (même structure que la réponse de `GET /v2/contracts/{cid}`)
 - **Événements `v2.contract.renewal.*`** — contient l'objet renouvellement automatique complet
-- **Événements `v2.claim.*`** — contient le sinistre complet (même structure que `ClaimResponse`)
+- **Événements `v2.claim.*`** — contient un objet `claim` (le sinistre), accompagné selon l'événement de `from` et `to` (`v2.claim.status.updated`), d'un objet `document` (`v2.claim.document.*`) ou d'un objet `settlement` (`v2.claim.settlement.*`). Dans `v2.claim.draft.created` et `v2.claim.draft.ready`, `claim` a la structure de `ClaimResponse`. Dans les autres événements, ses identifiants et ses champs peuvent différer de `ClaimResponse` (voir [Statut](#statut) et [Documents](#documents))
 </Callout>
 
 ## Événements contrats
@@ -148,7 +148,7 @@ Le contenu de `data` dépend du type d'événement :
 | Événement | Description |
 |-----------|-------------|
 | `v2.claim.draft.created` | Nouvelle pré-déclaration créée |
-| `v2.claim.draft.ready` | Tous les documents obligatoires uploadés, prête pour soumission |
+| `v2.claim.draft.ready` | Tous les documents obligatoires déposés, prête pour soumission |
 | `v2.claim.draft.archived` | Pré-déclaration annulée |
 
 ### Cycle de vie du sinistre
@@ -167,14 +167,28 @@ Le contenu de `data` dépend du type d'événement :
 |-----------|-------------|
 | `v2.claim.status.updated` | Changement de statut du sinistre |
 
+Pour une pré-déclaration soumise, `v2.claim.status.updated` suit le statut renvoyé par `GET /v2/claims/{id}`, passages entre `pending_info` et `in_progress` compris. `to` et `claim.status` portent le nouveau statut ; `from` porte le dernier statut annoncé ou, pour la première annonce, un statut antérieur (`in_progress` ou `submitted`).
+
+- Dans `v2.claim.created` et `v2.claim.status.updated`, `claim.id` est l'identifiant du sinistre (le `claimId` reçu à la soumission), pas l'`id` de la pré-déclaration, et `claim.externalClaimId` est absent : rapprochez ces événements par `claimId`.
+- À la soumission par l'API, les pièces de la configuration que vous n'avez pas déposées, y compris les pièces `expected`, sont réclamées par Tulip. Elles gardent leur catégorie dans `documentEntries` (par exemple `expected`), au statut `waiting_for`.
+  - Si des pièces sont ainsi réclamées, `GET /v2/claims/{id}` renvoie `pending_info` dès la soumission et jusqu'au dépôt de ces pièces ; `v2.claim.created` porte alors `claim.status` à `pending_info`.
+  - Sinon, il renvoie `in_progress`, ou `submitted` tant que Tulip n'a pas pris le dossier en charge.
+- Après la soumission, `GET /v2/claims/{id}` repasse à `pending_info` quand Tulip réclame une pièce, refuse une pièce déposée (elle est alors réclamée à nouveau, au statut `waiting_for`) ou supprime le document déposé d'une pièce `mandatory`.
+- Ensuite, chaque changement du statut renvoyé par `GET /v2/claims/{id}` est annoncé, par exemple le passage à `in_progress` au dépôt de la dernière pièce au statut `waiting_for` (pièce `mandatory` manquante ou pièce réclamée par Tulip, `expected` comprise), la clôture, le refus ou l'abandon.
+- À l'abandon, `v2.claim.status.updated` (vers `abandoned`) et `v2.claim.abandoned` sont émis, dans un ordre non garanti ; `v2.claim.abandoned` peut arriver en double (voir [Bonnes pratiques](#bonnes-pratiques)).
+- L'ordre entre `v2.claim.document.uploaded` et le `v2.claim.status.updated` que déclenche un dépôt n'est pas garanti : ne supposez pas que l'un arrive avant l'autre.
+- Dans `v2.claim.created`, `v2.claim.document.accepted`, `v2.claim.document.refused`, `v2.claim.document.requested` et `v2.claim.settlement.*`, `claim.status` peut différer de celui de `GET /v2/claims/{id}` : ne vous en servez pas pour suivre le statut, relisez `GET /v2/claims/{id}`, à la soumission comme ensuite. Le payload de `v2.claim.document.uploaded` ne porte pas de `claim.status`.
+
 ### Documents
 
 | Événement | Description |
 |-----------|-------------|
-| `v2.claim.document.uploaded` | Document uploadé |
+| `v2.claim.document.uploaded` | Document déposé |
 | `v2.claim.document.accepted` | Document accepté par le gestionnaire |
 | `v2.claim.document.refused` | Document refusé par le gestionnaire |
 | `v2.claim.document.requested` | Document supplémentaire demandé |
+
+Pour `v2.claim.document.uploaded`, `claim.externalClaimId` n'est présent que si le sinistre provient d'une pré-déclaration : il vaut alors l'`id` de la pré-déclaration. Pour un sinistre hors pré-déclaration, il est absent : utilisez `claim.id` pour appeler l'API v2.
 
 ### Règlements
 
@@ -241,12 +255,12 @@ async function handleRenewalNotification(data) {
 }
 
 async function handleClaimCreated(data) {
-  console.log(`Nouveau sinistre créé: ${data.claimId}`);
+  console.log(`Nouveau sinistre créé: ${data.claim.id}`);
   // Ex: créer une entrée dans votre système, notifier une équipe
 }
 
 async function handleClaimClosed(data) {
-  console.log(`Sinistre clôturé: ${data.claimId}`);
+  console.log(`Sinistre clôturé: ${data.claim.id}`);
   // Ex: mettre à jour le statut dans votre base de données
 }
 

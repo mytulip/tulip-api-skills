@@ -66,7 +66,7 @@ Dans cet exemple :
 ## Points d'attention
 
 <Callout type="warn">
-**Paiement actif bloque l'abandon** — Un sinistre avec un paiement en cours ne peut pas être abandonné (erreur 3007). Attendez que le paiement soit traité avant de tenter un abandon.
+**Paiement actif bloque l'abandon** — Un sinistre avec un paiement en cours ne peut pas être abandonné (erreur 3007). `settlements` ne liste que les paiements effectués : un paiement en cours bloque l'abandon sans y apparaître. Attendez que le paiement soit traité avant de tenter un abandon.
 </Callout>
 
 <Callout type="info">
