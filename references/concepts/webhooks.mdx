@@ -147,7 +147,7 @@ Le contenu de `data` dépend du type d'événement :
 
 | Événement | Description |
 |-----------|-------------|
-| `v2.claim.draft.created` | Nouvelle pré-déclaration créée |
+| `v2.claim.draft.created` | Nouvelle pré-déclaration créée, par l'API ou depuis le formulaire de déclaration de sinistre. Créée depuis le formulaire, elle n'est jamais rattachée à un contrat : `contractId`, `contractProductId` et `product` valent `null`. |
 | `v2.claim.draft.ready` | Tous les documents obligatoires déposés, prête pour soumission |
 | `v2.claim.draft.archived` | Pré-déclaration annulée |
 

@@ -5,6 +5,28 @@ description: Historique des changements de l'API Tulip.
 
 Les changements de l'API v2 qui touchent votre intégration, du plus récent au plus ancien. Chaque entrée dit ce qui change et ce que vous devez faire.
 
+## 3 novembre 2026 : pré-déclarations du formulaire de déclaration de sinistre dans `v2.claim.draft.created`
+
+Le webhook `v2.claim.draft.created` est désormais aussi envoyé quand une pré-déclaration est créée depuis le formulaire de déclaration de sinistre, et plus seulement par `POST /v2/claims`. Une pré-déclaration créée depuis le formulaire n'est jamais rattachée à un contrat. Pour toute pré-déclaration sans contrat, `contractId` vaut désormais `null`, et non plus `""`. Pour une pré-déclaration rattachée à un contrat, `v2.claim.draft.ready` porte désormais le produit du contrat.
+
+### Ce qui change
+
+- **Webhook `v2.claim.draft.created`** : il est envoyé pour chaque pré-déclaration créée depuis le formulaire de déclaration de sinistre, comme pour une pré-déclaration créée par l'API. Son payload reste `{ claim }`, quelle que soit l'origine, et `claim` a les mêmes champs que `GET /v2/claims/{id}` lu juste après la création.
+- **Pré-déclaration sans contrat** : `contractId` et `contractProductId` valent `null`. `contractId` vaut `null`, et non plus `""`, dans `v2.claim.draft.created`, `v2.claim.draft.ready`, `GET /v2/claims/{id}`, `GET /v2/claims` et la réponse de `PATCH /v2/claims/{id}`, y compris pour les pré-déclarations déjà créées. `product` vaut `null` dans `v2.claim.draft.created`, `v2.claim.draft.ready`, `GET /v2/claims/{id}` et la réponse de `PATCH /v2/claims/{id}` ; `GET /v2/claims` ne renvoie pas `product`. Dans l'OpenAPI, `contractId` devient nullable dans `ClaimResponse` et `ClaimSummary`.
+- **Webhook `v2.claim.draft.ready` d'une pré-déclaration rattachée à un contrat** : `claim.product` porte désormais le produit du contrat (type, sous-type, marque, modèle), comme `GET /v2/claims/{id}`, au lieu d'un produit dont la marque et le modèle valaient `unknown` et dont le sous-type était celui du sinistre. Avec ou sans contrat, `claim` a désormais les mêmes champs que `GET /v2/claims/{id}`.
+- **Pièces dans `v2.claim.draft.ready`** : pour toute pré-déclaration, avec ou sans contrat, `documentEntries` et `canSubmit` sont désormais calculés comme dans `GET /v2/claims/{id}`, réponses aux questions comprises. Une pièce prévue selon ces réponses (pièce conditionnelle) y figure avec sa catégorie, `mandatory` ou `expected` : déposée, elle n'y est plus en `optional` ; pas encore déposée, une pièce `expected` y figure en `waiting_for`, alors qu'elle était absente. `canSubmit` y vaut toujours `true`, comme avant. Le cas des libellés du formulaire, décrit ci-dessous, reste à part.
+- **Pièces d'une pré-déclaration du formulaire** : tant que les libellés du formulaire ne sont pas reconnus, un document déposé depuis le formulaire peut figurer en `optional` dans `documentEntries`, avec un `type` différent de celui de l'entrée attendue. L'entrée `mandatory` correspondante reste alors `waiting_for`, et `canSubmit` vaut `false`.
+
+### Ce que vous devez faire
+
+- Si vous êtes abonné à `v2.claim.draft.created`, attendez-vous à recevoir des pré-déclarations que vous n'avez pas créées par l'API. Ne cherchez pas de contrat quand `contractId` vaut `null`.
+- Si vous lisez `claim.product` dans `v2.claim.draft.ready`, attendez-vous à la marque et au modèle du contrat, et non plus à `unknown`.
+- Si vous lisez `documentEntries` dans `v2.claim.draft.ready`, attendez-vous à y trouver les pièces conditionnelles avec leur catégorie (`mandatory` ou `expected`), comme dans `GET /v2/claims/{id}` : une pièce déposée n'y est plus en `optional`, et une pièce `expected` pas encore déposée y figure en `waiting_for`.
+- Traitez `contractId` comme nullable partout, y compris pour vos pré-déclarations existantes. Si votre client est généré depuis l'OpenAPI, régénérez-le.
+- Pour une pré-déclaration créée depuis le formulaire, une entrée `mandatory` au statut `waiting_for` ne veut pas dire que la pièce manque : regardez aussi les documents `optional`, dont le `type` peut différer.
+
+Pour en savoir plus, voir [Webhooks : pré-déclaration](/docs/concepts/webhooks#pré-déclaration-draft) et [D'où viennent les entrées de `documentEntries`](/docs/concepts/documents-management#doù-viennent-les-entrées-de-documententries).
+
 ## 2 novembre 2026 : sinistres hors pré-déclaration dans l'API v2
 
 Les sinistres ouverts chez Tulip sans passer par une pré-déclaration de l'API, appelés **sinistres hors pré-déclaration**, sont désormais disponibles dans l'API v2, avec les mêmes routes que les pré-déclarations. Le contrat change sur trois points seulement : le statut d'un document refusé devient `refused` dans l'énumération `ClaimDocumentStatus`, `to_sign` y devient une valeur publiée, et un nouveau code d'erreur apparaît pour les documents à signer. Aucun champ ni paramètre n'est ajouté ou retiré. Le dépôt de documents change aussi de comportement : il répond en priorité à une pièce demandée, ne renvoie plus `3005` quand un document du type reste remplaçable, rattache au sinistre un document déposé sur une pré-déclaration soumise, et peut déclencher `v2.claim.status.updated`.

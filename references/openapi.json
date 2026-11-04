@@ -4312,12 +4312,15 @@
             ]
           },
           "contractId": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ContractId"
+              },
+              {
+                "type": "null"
               }
             ],
-            "description": "L'identifiant du contrat associé",
+            "description": "L'identifiant du contrat associé (null si non associé)",
             "examples": [
               "contract_abc123"
             ]
@@ -4549,12 +4552,15 @@
             ]
           },
           "contractId": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/ContractId"
+              },
+              {
+                "type": "null"
               }
             ],
-            "description": "L'identifiant du contrat associé",
+            "description": "L'identifiant du contrat associé (null si non associé)",
             "examples": [
               "contract_abc123"
             ]
